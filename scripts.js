@@ -75,7 +75,7 @@ function doDate() {
     }
 
     let min = now.getMinutes();
-    if(now.getMinutes() < 9){
+    if(now.getMinutes() <= 9){
         min = "0" + now.getMinutes();
     }
 
