@@ -74,10 +74,15 @@ function doDate() {
         stamp = "pm";
     }
 
+    let min = now.getMinutes();
+    if(now.getMinutes() < 9){
+        min = "0" + now.getMinutes();
+    }
+
     //Attaching to HTML
     document.querySelector(".date").textContent = `${months[now.getMonth()]} ${now.getDate()}, ${now.getFullYear()}`;
     document.querySelector(".day").textContent = `${days[now.getDay()]}`;
-    document.querySelector(".time").textContent = `${hour}:${now.getMinutes()} ${stamp}`;
+    document.querySelector(".time").textContent = `${hour}:${min} ${stamp}`;
 
 }
 
