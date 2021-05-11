@@ -1,4 +1,4 @@
-FORKED AND ADDED TOO, ORIGINAL CODE IS FROM WILL HALL
+This was Forked and added to, original code is from Will Hall
 
 I went ahead and added real time Date, Time, and Weather.
 
