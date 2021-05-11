@@ -2,6 +2,8 @@ FORKED AND ADDED TOO, ORIGINAL CODE IS FROM WILL HALL
 
 I went ahead and added real time Date, Time, and Weather.
 
+Wills README
+-------------
 Demo of automatic contrast effects for the UI tiles of a smart mirror
 
 How can we ensure that the UI elements of a smart mirror have appropriate contrast so that they stay visible even when the background has low contrast with the UI content?
