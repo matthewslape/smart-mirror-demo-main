@@ -1,0 +1,522 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width">
+  <title>Smart Mirror Demo</title>
+<script>
+  document.addEventListener("DOMContentLoaded", function() {
+    const video = document.querySelector('video');
+    let interval = null;
+    const themes = [
+      {
+        name: 'sunglasses',
+        text: [0, 0, 100],
+        background: [0, 0, 0],
+        shadow: '-.125rem .125rem 0 hsla(0, 0%, 0%, .25)',
+      },
+      {
+        name: 'polar',
+        text: [176, 98, 15],
+        background: [0, 0, 100],
+        shadow: '-.125rem .125rem 0 hsla(0, 0%, 100%, .25)',
+      },
+      {
+        name: 'sunset',
+        text: [47, 100, 58],
+        background: [0, 0, 0],
+        shadow: '-.125rem .125rem 0 hsla(0, 0%, 0%, .25)',
+      },
+    ];
+
+    let theme = null;
+    let themeCounter = 0;
+
+    setTheme(themes[0]);
+
+    document.querySelector('.overlay').addEventListener('click', function() {
+      themeCounter += 1;
+      const newIndex = themeCounter % themes.length;
+      console.log(`setting theme to ${themes[newIndex].name}`);
+      setTheme(themes[newIndex]);
+      doAutoAdjust();
+    });
+
+    navigator.mediaDevices.getUserMedia({
+      video: true,
+      audio: false,
+    }).then(function(stream) {
+      video.srcObject = stream;
+      video.play();
+      startAutoAdjust();
+    }).catch(function(err) {
+      alert("Camera didn't work - maybe something else is using it? Error message: " + err);
+    });
+
+    document.querySelector('#toggleAutoContrast').addEventListener('click', function() {
+      if (interval) {
+        window.clearInterval(interval);
+        interval = null;
+        clearCells();
+      } else {
+        startAutoAdjust();
+      }
+    });
+
+    document.querySelector('#clearCellsButton').addEventListener('click', function() {
+      clearCells();
+    });
+
+    document.querySelector('#togglePlayButton').addEventListener('click', function() {
+      if (video.paused) {
+        video.play();
+      } else {
+        video.pause();
+      }
+    });
+
+    document.querySelector('#toggleCanvasButton').addEventListener('click', function() {
+      const vidCanvas = document.querySelector('#vidcanvas');
+      vidCanvas.style.display = vidCanvas.style.display === 'none' ? 'block' : 'none';
+    });
+
+    document.querySelector('#toggleCellsButton').addEventListener('click', function() {
+      document.querySelectorAll('.cell').forEach(function(cell) {
+        if (cell.style.opacity === '0') {
+          cell.style.opacity = '1';
+        } else {
+          cell.style.opacity = '0';
+        }
+      });
+    });
+
+    document.querySelector('#takeSnapshotButton').addEventListener('click', function() {
+      doAutoAdjust();
+    });
+
+    document.querySelector('#controlsButton').addEventListener('click', function() {
+      const panel = document.querySelector('.control-panel__items');
+      panel.style.display = panel.style.display === 'block' ? 'none' : 'block';
+    });
+
+    function startAutoAdjust() {
+      const amount = parseInt(document.querySelector('#intervalAmount').value);
+      interval = window.setInterval(function() {
+        doAutoAdjust();
+      }, amount);
+    }
+
+    function doAutoAdjust() {
+      const canvas = document.querySelector('#vidcanvas');
+      const ctx = canvas.getContext('2d');
+      canvas.height = video.offsetHeight;
+      canvas.width = video.offsetWidth;
+      const dimensions = getImageFillDimensions(video.videoWidth, video.videoHeight, canvas.width, canvas.height);
+      ctx.scale(-1, 1); // apply image flipped
+      ctx.drawImage(video, -(dimensions.width + dimensions.x), dimensions.y, dimensions.width, dimensions.height);
+      ctx.scale(-1, 1); // flip canvas back
+      document.querySelectorAll('.cell').forEach(function(cell) {
+        const rect = [
+          cell.getBoundingClientRect().x,
+          cell.getBoundingClientRect().y,
+          cell.getBoundingClientRect().width,
+          cell.getBoundingClientRect().height,
+        ];
+        ctx.strokeStyle = 'yellow';
+        ctx.strokeRect(...rect);
+        const imageData = ctx.getImageData(...rect);
+        const color = getAverageColor(imageData);
+        const avgVideoChunkBrightness = ((color[0] + color[1] + color[2]) / 3) / 255;
+        let opacity = 0;
+        if (theme.background[2] > 50) {
+          opacity = 1 - avgVideoChunkBrightness;
+        } else {
+          opacity = avgVideoChunkBrightness;
+        }
+        const maxOpacity = 1;
+        cell.style.backgroundColor = formatHsla(...theme.background, opacity * maxOpacity);
+      });
+    }
+
+    function setTheme(newTheme) {
+      theme = newTheme;
+      document.documentElement.style.setProperty('--text-color', formatHsla(...theme.text));
+      document.documentElement.style.setProperty('--shadow', theme.shadow);
+      const rgbTextColor = HSLToRGB(...theme.text);
+      const colorMatrix = createColorizationMatrix(...rgbTextColor);
+      const colorizeFilter = document.querySelector('#colorize feColorMatrix');
+      colorizeFilter.setAttribute('values', colorMatrix);
+    }
+
+    function getImageFillDimensions(imgWidth, imgHeight, canvasWidth, canvasHeight){
+      var scale = Math.max(canvasWidth / imgWidth, canvasHeight / imgHeight);
+      return {
+        x: (canvasWidth / 2) - (imgWidth / 2) * scale,
+        y: (canvasHeight / 2) - (imgHeight / 2) * scale,
+        width: imgWidth * scale,
+        height: imgHeight * scale,
+      };
+    }
+
+    function clearCells() {
+      document.querySelectorAll('.cell').forEach(function(cell) {
+        cell.style.backgroundColor = formatHsla(0, 0, 0, 0);
+      });
+    }
+
+    function formatHsla(h, s, l, a=1) {
+      return `hsla(${h}, ${s}%, ${l}%, ${a})`;
+    }
+
+    function formatRbga(r, g, b, a) {
+      return `rgba(${r}, ${g}, ${b}, ${a})`;
+    }
+
+    function createColorizationMatrix(r, g, b) {
+      return `
+        0 0 0 0 ${r / 255}
+        0 0 0 0 ${g / 255}
+        0 0 0 0 ${b / 255}
+        0 0 0 1 0
+      `;
+    }
+
+    function HSLToRGB(h, s, l) {
+      s /= 100;
+      l /= 100;
+
+      let c = (1 - Math.abs(2 * l - 1)) * s,
+          x = c * (1 - Math.abs((h / 60) % 2 - 1)),
+          m = l - c/2,
+          r = 0,
+          g = 0,
+          b = 0;
+      if (0 <= h && h < 60) {
+        r = c; g = x; b = 0;
+      } else if (60 <= h && h < 120) {
+        r = x; g = c; b = 0;
+      } else if (120 <= h && h < 180) {
+        r = 0; g = c; b = x;
+      } else if (180 <= h && h < 240) {
+        r = 0; g = x; b = c;
+      } else if (240 <= h && h < 300) {
+        r = x; g = 0; b = c;
+      } else if (300 <= h && h < 360) {
+        r = c; g = 0; b = x;
+      }
+      r = Math.round((r + m) * 255);
+      g = Math.round((g + m) * 255);
+      b = Math.round((b + m) * 255);
+
+      return [r, g, b];
+    }
+
+    function getAverageColor(imageData) {
+      let [totalR, totalG, totalB, totalA] = [0, 0, 0, 0];
+      for (let offset = 0; offset < imageData.data.length; offset += 4) {
+        totalR += imageData.data[offset + 0];
+        totalG += imageData.data[offset + 1];
+        totalB += imageData.data[offset + 2];
+        totalA += imageData.data[offset + 3];
+      }
+      const numPixels = imageData.width * imageData.height;
+      return [
+        totalR / numPixels,
+        totalG / numPixels,
+        totalB / numPixels,
+        (totalA / numPixels) / 255,
+      ];
+    }
+  });
+</script>
+<style>
+  :root {
+    --text-color: hsla(0, 0%, 100%, 1);
+    --shadow: none,
+  }
+  html {
+    margin: 0;
+    font-size: 16px;
+  }
+  @media (max-width: 1700px) {
+    html {
+      font-size: 12px;
+    }
+  }
+  @media (max-width: 1400px) {
+    html {
+      font-size: 10px;
+    }
+  }
+  body{
+    background-color: hsl(0, 0%, 10%);
+    margin: 0;
+  }
+  * {
+    box-sizing: border-box;
+  }
+  .main-video {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    transform: scaleX(-1);
+  }
+  .overlay {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: grid;
+    grid-template-columns: 3fr 3fr 4fr 3fr 3fr;
+    grid-template-rows: repeat(3, 1fr);
+    align-items: center;
+    justify-content: center;
+  }
+  @media (max-width: 1200px) {
+    .overlay {
+      grid-template-columns: 1fr 1fr 0 1fr 1fr;
+    }
+  }
+  .cell {
+    font-family:'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+    color: var(--text-color);
+    padding: 1.5rem;
+    height: 100%;
+    align-items: center;
+    justify-content: center;
+    transition: .2s ease-in-out all;
+    opacity: 1;
+    overflow: hidden;
+    text-shadow: var(--shadow);
+  }
+  .cell-label {
+    font-size: 1.5rem;
+    font-weight: bold;
+    padding-bottom: 1rem;
+  }
+  .control-panel {
+    position: absolute;
+    bottom: 0;
+    right: 0;
+  }
+  .appointments {
+    border-spacing: 0;
+    font-size: 1.5rem;
+  }
+  .appointments td {
+    padding: .125rem 0 .125rem 1rem;
+    vertical-align: top;
+  }
+  .appointments td:first-child {
+    padding-left: 0;
+  }
+  .checklist {
+    margin: 0;
+    padding: 0;
+  }
+  .listItem {
+    font-size: 1.5rem;
+    margin-bottom: .5rem;
+    display: flex;
+  }
+  .checklist li::before {
+    content: '';
+    display: block;
+    margin-top: .5rem;
+    margin-right: 1rem;
+    height: 1rem;
+    width: 1rem;
+    border: .25rem solid var(--text-color);
+    flex-shrink: 0;
+  }
+  .masked {
+    mask-image: linear-gradient(rgb(0, 0, 0), 90%, transparent);
+  }
+  .forecast {
+    font-size: 1.5rem;
+    border-spacing: 0;
+  }
+  .forecast td {
+    padding: .125rem 0 .125rem 1rem;
+    vertical-align: top;
+  }
+  .forecast td:first-child {
+    padding-left: 0;
+  }
+</style>
+</head>
+
+<body>
+  <video class="main-video" loop muted playsinline autoplay>
+    <source src="" type="video/mp4"/>
+  </video>
+  <canvas id="vidcanvas" style="display: none; position: absolute;"></canvas>
+  <div class="overlay">
+    <div class="cell">
+      <div class="cell-label day">
+        Loading...
+      </div>
+      <div class="date" style="font-size: 1.5rem">
+        Loading...
+      </div>
+      <div class="time" style="font-size: 4.75rem">Loading...</div>
+    </div>
+    <div class="cell" style="grid-area: 2 / 1 / 3 / 2">
+      <div class="cell-label">
+        Appointments
+      </div>
+      <div class="masked" style="position: relative">
+        <table class="appointments">
+          <tr>
+            <td><strong>11</strong></td>
+            <td>CSCD 530 lab</td>
+          </tr>
+          <tr>
+            <td><strong>12</strong></td>
+            <td>Lunch</td>
+          </tr>
+          <tr>
+            <td><strong>1p</strong></td>
+            <td>UX 2</td>
+          </tr>
+          <tr>
+            <td><strong>3:30p</strong></td>
+            <td>Donation cart check-in</td>
+          </tr>
+          <tr>
+            <td><strong>4:30p</strong></td>
+            <td>Follow up with management about project status</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+    <div class="cell" style="grid-area: 3 / 1 / span 1 / span 1">
+      <div class="cell-label">
+        Today's Goals
+      </div>
+      <ul class="checklist masked">
+        <div class="listItem"><input type="checkbox"> subscription research</input></div>
+        <div class="listItem"><input type="checkbox">Work on cross-posting stories</input></div>
+        <div class="listItem"><input type="checkbox">Performance check</input></div>
+        <div class="listItem"><input type="checkbox">Mirror component multisite?</input></div>
+      </ul>
+    </div>
+    <div class="cell" style="grid-area: 3 / 4 / span 1 / span 1">
+      <div class="cell-label">
+        Something to Read
+      </div>
+      <div style="font-size: 2.375rem; margin-bottom: 1rem">
+        The Green Hills of Earth
+      </div>
+      <div style="font-size: 1.5rem">
+        <span style="margin-right: .5em">Robert Heinlein</span>
+        <span style="opacity: .75">
+          270pg
+        </span>
+      </div>
+    </div>
+    <div class="cell" style="grid-area: 1 / 5 / span 1 / span 1">
+      <div class="cell-label desc">
+        Loading...
+      </div>
+      <div class="f"
+        style="
+        font-size: 5rem;
+        font-weight: 300;
+        line-height: .8;
+        margin-bottom: 1.5rem;
+      ">
+        0°
+      </div>
+      <div style="display: flex; align-items: center">
+        <img
+          src="/img/emojione-monotone_sun-behind-large-cloud.svg"
+          alt="Loading..."
+          class="weather-icon"
+          style="width: 4rem"
+        />
+        <div style="display: flex; flex-direction: column;">
+          <span class="sunrise" style="font-size: 1rem; margin-left: 1.5rem; padding: 5px;">Loading...</span>
+          <span class="sunset" style="font-size: 1rem; margin-left: 1.5rem; padding: 5px;">Loading...</span>
+        </div>
+        
+      </div>
+      <div id="location" style="font-size: 2rem; padding: 10px">Loading...</div>
+    </div>
+    <div class="cell" style="grid-area: 2 / 5 / span 1 / span 1">
+      <div class="cell-label">
+        Forecast
+      </div>
+      <table class="forecast">
+        <tr>
+          <td><strong>10</strong></td>
+          <td><strong>55°</strong></td>
+          <td>Partly Sunny</td>
+        </tr>
+        <tr>
+          <td><strong>12</strong></td>
+          <td><strong>57°</strong></td>
+          <td>Partly Sunny</td>
+        </tr>
+        <tr>
+          <td><strong>2p</strong></td>
+          <td><strong>56°</strong></td>
+          <td>25% Rain</td>
+        </tr>
+        <tr>
+          <td><strong>5p</strong></td>
+          <td><strong>51°</strong></td>
+          <td>Sunset</td>
+        </tr>
+      </table>
+    </div>
+    <div class="cell" style="grid-area: 3 / 5 / span 1 / span 1; position: relative">
+      <div class="cell-label">
+        Flash Card
+      </div>
+      <img
+        src="img/Cassiopeia.svg"
+        alt="constellation Cassiopeia"
+        style="
+          width: 100%;
+          transform: rotateZ(-93deg);
+          margin-top: -1.5rem;
+          margin-bottom: -1.5rem;
+        "
+      />
+      <div style="font-size: 1.5rem; position: absolute; bottom: 1.5rem">
+        Constellation
+      </div>
+    </div>
+  </div>
+  <div class="control-panel" style=>
+    <div class="control-panel__items" style="display: none">
+      <div style="
+        display: flex;
+        flex-direction: column;
+      ">
+        <button id="takeSnapshotButton">Take Sample</button>
+        <button id="toggleAutoContrast">Toggle Auto Contrast</button>
+        <button id="clearCellsButton">Clear Cells</button>
+        <button id="useVideoButton">Use Webcam</button>
+        <button id="toggleCanvasButton">Toggle Canvas</button>
+        <button id="toggleCellsButton">Toggle Cells</button>
+        <button id="togglePlayButton">Play/Pause</button>
+        <input type="number" id="intervalAmount" value="500"/>
+      </div>
+    </div>
+    <div style="text-align: right">
+      <button id="controlsButton">Controls</button>
+    </div>
+  </div>
+  <svg>
+    <defs>
+      <filter id="colorize" color-interpolation-filters="sRGB">
+        <feColorMatrix type="matrix" values=""/>
+      </filter>
+    </defs>
+  </svg>
+
+  <script src="scripts.js"></script>
+</body>
+</html>
